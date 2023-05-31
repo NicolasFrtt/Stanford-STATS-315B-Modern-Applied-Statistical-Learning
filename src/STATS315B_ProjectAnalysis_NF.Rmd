@@ -1,0 +1,487 @@
+---
+title: "STATS 315B - Project - Data Analysis"
+author: "Nicolas Fertout"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+df_CGM = read.csv("C:/Users/nicof/Stanford/STATS 315B/Project/Data/RT-CGM Randomized Clinical Trial/DataTables/tblADataRTCGM_Blind_Baseline.csv")
+```
+
+
+```{r}
+df_HbA1c = read.csv("C:/Users/nicof/Stanford/STATS 315B/Project/Data/RT-CGM Randomized Clinical Trial/DataTables/tblALabHbA1c.csv")
+```
+
+
+```{r}
+df_summary = read.csv("C:/Users/nicof/Stanford/STATS 315B/Project/Data/RT-CGM Randomized Clinical Trial/DataTables/tblAPtSummary.csv")
+```
+
+
+
+```{r}
+df_CGM$DeviceDtTm = as.POSIXct(df_CGM$DeviceDtTm, format = "%Y-%m-%d %H:%M:%S")
+```
+
+
+```{r}
+library(ggplot2)
+require(dplyr)
+```
+
+```{r}
+ggplot(data=df_CGM[df_CGM$PtID == 220,], aes(x = DeviceDtTm, y = Glucose))+ 
+  geom_line()
+
+```
+
+
+
+
+```{r}
+df_CGM
+df_HbA1c[df_HbA1c$PtID == 220,]
+```
+
+
+
+```{r}
+df_debile = df_CGM[,c("PtID", "Glucose")]
+```
+
+
+```{r}
+require(tidyr)
+
+# add a new column for each glucose value
+df_debile <- df_debile %>% 
+  group_by(PtID) %>% 
+  mutate(col = paste0("Glucose", row_number())) %>% 
+  ungroup() %>% 
+  pivot_wider(names_from = col, values_from = Glucose)
+
+# view the result
+df_debile
+```
+```{r}
+df_debile2 = df_HbA1c[,c("PtID", "LabA1cResult")]
+require(tidyr)
+
+# add a new column for each glucose value
+df_debile2 <- df_debile2 %>% 
+  group_by(PtID) %>% 
+  mutate(col = paste0("LabA1cResult", row_number())) %>% 
+  ungroup() %>% 
+  pivot_wider(names_from = col, values_from = LabA1cResult)
+
+# view the result
+df_debile2
+```
+
+```{r}
+merged_debile = merge(df_debile, df_debile2)
+```
+
+```{r}
+indices = grep("^Glucose[0-9]+$", names(merged_debile))
+indices = indices[indices <= grep("^Glucose200$", names(merged_debile))]
+merged_debile_sub = merged_debile[, c(1, indices, ncol(merged_debile)-4)]
+```
+
+```{r}
+set.seed(1)
+
+train_debile = sample(1:nrow(merged_debile_sub), 0.75*nrow(merged_debile_sub), replace = FALSE)
+merged_debile_sub_train = merged_debile_sub[train_debile,]
+merged_debile_sub_test = merged_debile_sub[-train_debile,]
+```
+
+
+```{r}
+#formula_debile <- as.formula(paste0("LabA1cResult1 ~ ", paste(names(data)[-which(names(data) #== "outcome")], collapse = " + ")))
+```
+
+
+```{r}
+lm1_debile = lm(data=merged_debile_sub_train, LabA1cResult1 ~ . - PtID)
+summary(lm1_debile)
+
+```
+
+```{r}
+pred_A1c = predict(lm1_debile, newdata = merged_debile_sub_test)
+#sorted_pred_indices = as.integer(names(pred_A1c))
+#sorted_pred_indices
+```
+
+
+```{r}
+#as.numeric(unlist(merged_debile_sub_test[merged_debile_sub_test$PtID %in% sorted_pred_indices,]["LabA1cResult1"]))
+```
+
+```{r}
+plot(y = as.numeric(unlist(merged_debile_sub_test[,"LabA1cResult1"])), x = pred_A1c)
+```
+
+
+```{r}
+merged_debile_sub_test$LabA1cResult1 - pred_A1c
+```
+
+
+```{r}
+mean((pred_A1c - merged_debile_sub_test$LabA1cResult1)^2)
+```
+```{r}
+debile_debile = rep(mean(merged_debile_sub_test$LabA1cResult1), length(pred_A1c))
+mean((debile_debile - merged_debile_sub_test$LabA1cResult1)^2)
+```
+```{r}
+write.csv(merged_debile, "df_CGM_A1C.csv", row.names = F)
+```
+
+
+
+
+## Create Features
+
+```{r}
+require(dplyr)
+df_feng = merged_debile
+```
+
+```{r}
+# get only CGM columns for further analysis
+df_feng_glucOnly = select(df_feng, starts_with("Glucose"))
+```
+
+
+```{r}
+#compute rate of change (roc) of glucose. Since all obs are of the same \delta t, this is like taking the diff (scaled differently).
+df_feng_roc = as.data.frame(t(apply(df_feng_glucOnly, 1, diff, na.rm = T)))
+names(df_feng_roc) <- paste0(names(df_feng_roc), "_roc")
+# compute statistics of roc
+df_feng_roc$mean_gluc_roc <- rowMeans(df_feng_roc[, 2:(ncol(df_feng_roc)-5)], na.rm = T)
+df_feng_roc$sd_gluc_roc <- apply(df_feng_roc, 1, sd, na.rm = T)
+df_feng_roc$min_gluc_roc <- apply(df_feng_roc, 1, min, na.rm = T)
+df_feng_roc$max_gluc_roc <- apply(df_feng_roc, 1, max, na.rm = T)
+df_feng_roc$median_gluc_roc <- apply(df_feng_roc, 1, median, na.rm = T)
+# define helper function to get Median Absolute Deviation (MAD) of a df 
+mad_fun <- function(x) {
+  mad(x, na.rm = TRUE)
+}
+df_feng_roc$mad_gluc_roc <- apply(df_feng_roc, 1, mad_fun)
+```
+
+
+```{r}
+# df_feng = select(df_feng, -starts_with("PtID"))
+# create new, not time dependent features
+df_feng_stats = df_feng_glucOnly
+df_feng_stats$mean_gluc <- rowMeans(df_feng_stats[, 2:(ncol(df_feng_stats)-5)], na.rm = T)
+df_feng_stats$sd_gluc <- apply(df_feng_stats, 1, sd, na.rm = T)
+df_feng_stats$min_gluc <- apply(df_feng_stats, 1, min, na.rm = T)
+df_feng_stats$max_gluc <- apply(df_feng_stats, 1, max, na.rm = T)
+df_feng_stats$median_gluc <- apply(df_feng_stats, 1, median, na.rm = T)
+# define helper function to get Median Absolute Deviation (MAD) of a df 
+mad_fun <- function(x) {
+  mad(x, na.rm = TRUE)
+}
+df_feng_stats$mad_gluc <- apply(df_feng_stats, 1, mad_fun)
+```
+
+
+```{r}
+require(dplyr)
+# get rid of non-feature columns and add the output A1c
+df_feng_roc_ready = select(df_feng_roc, -starts_with("Glucose"))
+df_feng_roc_ready$A1c.1 = df_feng$LabA1cResult1
+df_feng_roc_ready
+
+df_feng_stats_ready = select(df_feng_stats, -starts_with("Glucose"))
+df_feng_stats_ready$A1c.1 = df_feng$LabA1cResult1
+df_feng_stats_ready
+
+# create a df with both of the above merged
+df_feng_stats_and_roc_ready = df_feng_stats_ready
+df_feng_stats_and_roc_ready = cbind(df_feng_stats_and_roc_ready, df_feng_roc_ready[, names(df_feng_roc_ready)[names(df_feng_roc_ready) != "A1c.1"]])
+df_feng_stats_and_roc_ready
+
+```
+
+Now some basic lm to start.
+
+```{r}
+set.seed(1)
+# get random rows
+train_feng = sample(1:nrow(df_feng_stats_and_roc_ready), 0.75*nrow(df_feng), replace = FALSE)
+#train_feng
+
+# get train and test set for all 3 datasets above
+df_feng_roc_ready_train = df_feng_roc_ready[train_feng,]
+df_feng_roc_ready_test = df_feng_roc_ready[-train_feng,]
+
+df_feng_stats_ready_train = df_feng_stats_ready[train_feng,]
+df_feng_stats_ready_test = df_feng_stats_ready[-train_feng,]
+
+df_feng_stats_and_roc_ready_train = df_feng_stats_and_roc_ready[train_feng,]
+df_feng_stats_and_roc_ready_test = df_feng_stats_and_roc_ready[-train_feng,]
+```
+
+```{r}
+lm_feng_roc.1 = lm(data = df_feng_roc_ready_train, A1c.1 ~ .)
+```
+```{r}
+lm_feng_stats.1 = lm(data = df_feng_stats_ready_train, A1c.1 ~ .)
+```
+```{r}
+lm_feng_stats_and_roc.1 = lm(data = df_feng_stats_and_roc_ready_train, A1c.1 ~ .)
+```
+
+```{r}
+summary(lm_feng_roc.1)
+summary(lm_feng_stats.1)
+summary(lm_feng_stats_and_roc.1)
+```
+
+```{r}
+pred_feng_roc.1 = predict(lm_feng_roc.1, newdata = df_feng_roc_ready_test)
+
+pred_feng_stats.1 = predict(lm_feng_stats.1, newdata = df_feng_stats_ready_test)
+
+pred_feng_stats_and_roc.1 = predict(lm_feng_stats_and_roc.1, newdata = df_feng_stats_and_roc_ready_test)
+```
+
+```{r}
+plot(y = as.numeric(unlist(df_feng_roc_ready_test[,"A1c.1"])), x = pred_feng_roc.1)
+
+plot(y = as.numeric(unlist(df_feng_stats_ready_test[,"A1c.1"])), x = pred_feng_stats.1)
+
+plot(y = as.numeric(unlist(df_feng_stats_and_roc_ready_test[,"A1c.1"])), x = pred_feng_stats_and_roc.1)
+```
+
+
+```{r}
+MSE_roc = mean((pred_feng_roc.1 - df_feng_roc_ready_test$A1c.1)^2)
+MSE_roc
+MSE_stats = mean((pred_feng_stats.1 - df_feng_stats_ready_test$A1c.1)^2)
+MSE_stats
+MSE_stats_and_roc = mean((pred_feng_stats_and_roc.1 - df_feng_stats_and_roc_ready_test$A1c.1)^2)
+MSE_stats_and_roc
+```
+
+```{r}
+RMSE_roc = sqrt(MSE_roc)
+RMSE_roc
+RMSE_stats = sqrt(MSE_stats)
+RMSE_stats
+RMSE_stats_and_roc = sqrt(MSE_stats_and_roc)
+RMSE_stats_and_roc
+```
+```{r}
+MAE_roc = mean(abs(pred_feng_roc.1 - df_feng_roc_ready_test$A1c.1))
+MAE_roc
+MAE_stats = mean(abs(pred_feng_stats.1 - df_feng_stats_ready_test$A1c.1))
+MAE_stats
+MAE_stats_and_roc = mean(abs(pred_feng_stats_and_roc.1 - df_feng_stats_and_roc_ready_test$A1c.1))
+MAE_stats_and_roc
+```
+
+```{r}
+debile_debile_feng.1 = rep(mean(df_feng_stats_and_roc_ready_test$A1c.1), nrow(df_feng_stats_and_roc_ready_test))
+MSE_interecpt_only = mean((debile_debile_feng.1 - df_feng_stats_and_roc_ready_test$A1c.1)^2)
+MAE_interecpt_only = mean(abs(debile_debile_feng.1 - df_feng_stats_and_roc_ready_test$A1c.1))
+MSE_interecpt_only
+MAE_interecpt_only
+```
+
+
+Now fitting some Ridge and Lasso :
+
+```{r}
+require(glmnet)
+
+### Ridge ###
+
+lm_feng_roc.ridge = cv.glmnet(data.matrix(select(df_feng_roc_ready_train, -"A1c.1")), 
+                              df_feng_roc_ready_train$A1c.1, alpha = 0)
+
+lm_feng_stats.ridge = cv.glmnet(data.matrix(select(df_feng_stats_ready_train, -"A1c.1")), 
+                              df_feng_stats_ready_train$A1c.1, alpha = 0)
+
+lm_feng_stats_and_roc.ridge = cv.glmnet(data.matrix(select(
+  df_feng_stats_and_roc_ready_train, -"A1c.1")), 
+  df_feng_stats_and_roc_ready_train$A1c.1, alpha = 0)
+
+### Lasso ###
+
+lm_feng_roc.lasso = cv.glmnet(data.matrix(select(df_feng_roc_ready_train, -"A1c.1")), 
+                              df_feng_roc_ready_train$A1c.1, alpha = 1)
+
+lm_feng_stats.lasso = cv.glmnet(data.matrix(select(df_feng_stats_ready_train, -"A1c.1")), 
+                              df_feng_stats_ready_train$A1c.1, alpha = 1)
+
+lm_feng_stats_and_roc.lasso = cv.glmnet(data.matrix(select(
+  df_feng_stats_and_roc_ready_train, -"A1c.1")), 
+  df_feng_stats_and_roc_ready_train$A1c.1, alpha = 1)
+
+```
+
+
+```{r}
+### Ridge ###
+
+plot(lm_feng_roc.ridge)
+
+plot(lm_feng_stats.ridge)
+
+plot(lm_feng_stats_and_roc.ridge)
+
+
+### Lasso ###
+
+plot(lm_feng_roc.lasso)
+
+plot(lm_feng_stats.lasso)
+
+plot(lm_feng_stats_and_roc.lasso)
+```
+
+
+```{r}
+### Ridge ###
+
+bestlambda_roc.ridge = lm_feng_roc.ridge$lambda.min # value of lambda which gives the smaller cross-validation MSE
+
+bestlambda_stats.ridge = lm_feng_stats.ridge$lambda.min
+
+bestlambda_stats_and_roc.ridge = lm_feng_stats_and_roc.ridge$lambda.min
+
+### Lasso ###
+
+bestlambda_roc.lasso = lm_feng_roc.lasso$lambda.min # value of lambda which gives the smaller cross-validation MSE
+
+bestlambda_stats.lasso = lm_feng_stats.lasso$lambda.min
+
+bestlambda_stats_and_roc.lasso = lm_feng_stats_and_roc.lasso$lambda.min
+```
+
+
+```{r}
+### Ridge ### 
+
+pred_feng_roc.ridge = predict(lm_feng_roc.ridge, s=bestlambda_roc.ridge, 
+                              newx = data.matrix(select(df_feng_roc_ready_test, -"A1c.1")))
+
+pred_feng_stats.ridge = predict(lm_feng_stats.ridge, s=bestlambda_stats.ridge, 
+                              newx = data.matrix(select(df_feng_stats_ready_test, -"A1c.1")))
+
+pred_feng_stats_and_roc.ridge = predict(lm_feng_stats_and_roc.ridge, 
+                                        s=bestlambda_stats_and_roc.ridge, 
+                                        newx = data.matrix(select(
+                                          df_feng_stats_and_roc_ready_test, -"A1c.1")))
+
+### Lasso ###
+
+pred_feng_roc.lasso = predict(lm_feng_roc.lasso, s=bestlambda_roc.lasso, 
+                              newx = data.matrix(select(df_feng_roc_ready_test, -"A1c.1")))
+
+pred_feng_stats.lasso = predict(lm_feng_stats.lasso, s=bestlambda_stats.lasso, 
+                              newx = data.matrix(select(df_feng_stats_ready_test, -"A1c.1")))
+
+pred_feng_stats_and_roc.lasso = predict(lm_feng_stats_and_roc.lasso, 
+                                        s=bestlambda_stats_and_roc.lasso, 
+                                        newx = data.matrix(select(
+                                          df_feng_stats_and_roc_ready_test, -"A1c.1")))
+
+# Lasso coefficients kept
+coef_feng_roc.lasso = predict(lm_feng_roc.lasso, type="coefficients", s=bestlambda_roc.lasso)
+coef_feng_roc.lasso
+
+coef_feng_stats.lasso = predict(lm_feng_stats.lasso, type="coefficients", s=bestlambda_stats.lasso)
+coef_feng_stats.lasso
+
+coef_feng_stats_and_roc.lasso = predict(lm_feng_stats_and_roc.lasso, type="coefficients", s=bestlambda_stats_and_roc.lasso)
+coef_feng_stats_and_roc.lasso
+```
+
+```{r}
+# Get the variable names of the non-zero coefficients for lasso
+var_feng_roc.lasso = row.names(coef_feng_roc.lasso)[which(coef_feng_roc.lasso != 0)]
+var_feng_stats.lasso = row.names(coef_feng_stats.lasso)[which(coef_feng_stats.lasso != 0)]
+var_feng_stats_and_roc.lasso = row.names(coef_feng_stats_and_roc.lasso)[which(coef_feng_stats_and_roc.lasso != 0)]
+
+cat("Variables kept by Lasso in roc:", var_feng_roc.lasso, "\n")
+cat("Variables kept by Lasso in stats:", var_feng_stats.lasso, "\n")
+cat("Variables kept by Lasso in stats_and_roc:", var_feng_stats_and_roc.lasso, "\n")
+```
+
+
+```{r}
+### Ridge ###
+
+plot(y = as.numeric(unlist(df_feng_roc_ready_test[,"A1c.1"])), x = pred_feng_roc.ridge)
+
+plot(y = as.numeric(unlist(df_feng_stats_ready_test[,"A1c.1"])), x = pred_feng_stats.ridge)
+
+plot(y = as.numeric(unlist(df_feng_stats_and_roc_ready_test[,"A1c.1"])), x = pred_feng_stats_and_roc.ridge)
+
+### Lasso ### 
+
+plot(y = as.numeric(unlist(df_feng_roc_ready_test[,"A1c.1"])), x = pred_feng_roc.lasso)
+
+plot(y = as.numeric(unlist(df_feng_stats_ready_test[,"A1c.1"])), x = pred_feng_stats.lasso)
+
+plot(y = as.numeric(unlist(df_feng_stats_and_roc_ready_test[,"A1c.1"])), x = pred_feng_stats_and_roc.lasso)
+```
+
+
+
+```{r}
+### Ridge ### 
+
+MSE_roc.ridge = mean((pred_feng_roc.ridge - df_feng_roc_ready_test$A1c.1)^2)
+MSE_roc.ridge
+MSE_stats.ridge = mean((pred_feng_stats.ridge - df_feng_stats_ready_test$A1c.1)^2)
+MSE_stats.ridge
+MSE_stats_and_roc.ridge = mean((pred_feng_stats_and_roc.ridge - df_feng_stats_and_roc_ready_test$A1c.1)^2)
+MSE_stats_and_roc.ridge
+
+### Lasso ###
+
+MSE_roc.lasso = mean((pred_feng_roc.lasso - df_feng_roc_ready_test$A1c.1)^2)
+MSE_roc.lasso
+MSE_stats.lasso = mean((pred_feng_stats.lasso - df_feng_stats_ready_test$A1c.1)^2)
+MSE_stats.lasso
+MSE_stats_and_roc.lasso = mean((pred_feng_stats_and_roc.lasso - df_feng_stats_and_roc_ready_test$A1c.1)^2)
+MSE_stats_and_roc.lasso
+```
+
+```{r}
+### Ridge ###
+
+MAE_roc.ridge = mean(abs(pred_feng_roc.ridge - df_feng_roc_ready_test$A1c.1))
+MAE_roc.ridge
+MAE_stats.ridge = mean(abs(pred_feng_stats.ridge - df_feng_stats_ready_test$A1c.1))
+MAE_stats.ridge
+MAE_stats_and_roc.ridge = mean(abs(pred_feng_stats_and_roc.ridge - df_feng_stats_and_roc_ready_test$A1c.1))
+MAE_stats_and_roc.ridge
+
+### Lasso ###
+
+MAE_roc.lasso = mean(abs(pred_feng_roc.lasso - df_feng_roc_ready_test$A1c.1))
+MAE_roc.lasso
+MAE_stats.lasso = mean(abs(pred_feng_stats.lasso - df_feng_stats_ready_test$A1c.1))
+MAE_stats.lasso
+MAE_stats_and_roc.lasso = mean(abs(pred_feng_stats_and_roc.lasso - df_feng_stats_and_roc_ready_test$A1c.1))
+MAE_stats_and_roc.lasso
+```
+
+

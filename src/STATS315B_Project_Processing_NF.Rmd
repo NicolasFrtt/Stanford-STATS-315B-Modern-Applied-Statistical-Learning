@@ -1,0 +1,271 @@
+---
+title: "STATS 315B - Data Processing"
+author: "Nicolas Fertout"
+date: '`r Sys.Date()`'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r}
+# Loop through the file names and create data frames
+for (i in 1:12) {
+  file_name <- paste0("C:/Users/nicof/Stanford/STATS 315B/Project/Data/RT-CGM Randomized Clinical Trial/DataTables/tblADataRTCGM_Unblinded_RTCGMGroup_", i, ".csv")
+  df_name <- paste0("df_CGM_unblind_RTCGM_", i)
+  assign(df_name, read.csv(file_name))
+}
+```
+
+
+```{r}
+# merge all datasets into 1 giant one
+df_merged_CGM_unblind_RTCGM = data.frame()
+
+for (i in 1:12) {
+  df_name <- paste0("df_CGM_unblind_RTCGM_", i)
+  df_merged_CGM_unblind_RTCGM <- rbind(df_merged_CGM_unblind_RTCGM, get(df_name))
+}
+
+```
+
+
+```{r}
+PtID_list = unique(df_merged_CGM_unblind_RTCGM$PtID)
+PtID_list[1:5]
+```
+
+```{r}
+df_merged_CGM_unblind_RTCGM$DeviceDtTm = as.POSIXct(df_merged_CGM_unblind_RTCGM$DeviceDtTm, format = "%Y-%m-%d %H:%M:%S")
+```
+
+```{r}
+# sort df by PdID and then Time
+df_merged_CGM_unblind_RTCGM = df_merged_CGM_unblind_RTCGM[order(df_merged_CGM_unblind_RTCGM$PtID, df_merged_CGM_unblind_RTCGM$DeviceDtTm),]
+```
+
+
+```{r}
+df_HbA1c = read.csv("C:/Users/nicof/Stanford/STATS 315B/Project/Data/RT-CGM Randomized Clinical Trial/DataTables/tblALabHbA1c.csv")
+df_HbA1c$LabHbA1cDt = as.POSIXct(df_HbA1c$LabHbA1cDt, format = "%Y-%m-%d %H:%M:%S")
+# sort df by PdID and then Time
+df_HbA1c = df_HbA1c[order(df_HbA1c$PtID, df_HbA1c$LabHbA1cDt),]
+```
+
+
+```{r}
+df_summary = read.csv("C:/Users/nicof/Stanford/STATS 315B/Project/Data/RT-CGM Randomized Clinical Trial/DataTables/tblAPtSummary.csv")
+```
+
+```{r}
+require(tidyr)
+require(ggplot2)
+require(dplyr)
+```
+
+```{r}
+PtID_list[190]
+```
+
+```{r}
+df_HbA1c[df_HbA1c$PtID == PtID_list[198],]
+```
+
+
+```{r}
+time_diff = rep(0, length(PtID_list))
+for (i in 1:length(PtID_list)){
+  time_diff[i] = as.numeric((df_HbA1c[df_HbA1c$PtID == PtID_list[i],][2,"LabHbA1cDt"])-(df_HbA1c[df_HbA1c$PtID == PtID_list[i],][1,"LabHbA1cDt"]), units = "days")
+}
+ggplot(data = data.frame(x = 1:length(PtID_list), y =time_diff), aes(x=x, y=y)) + 
+  geom_line()
+```
+
+
+
+CGM data between readings:
+
+```{r}
+# Initialize a list to store the new data frame for each patient
+df_CGM.1 = data.frame()
+df_CGM.2 = data.frame()
+df_CGM.3 = data.frame()
+df_CGM.4 = data.frame()
+
+# Loop through each patient ID
+for (pid in PtID_list){
+  # Subset the data for the current patient
+  CGM_temp = df_merged_CGM_unblind_RTCGM[df_merged_CGM_unblind_RTCGM$PtID == pid, ]
+  HbA1c_temp = df_HbA1c[df_HbA1c$PtID == pid, ]
+  
+  # get the indices of the HbA1c measurement
+  hb_index.0 = 1
+  hb_index.1 = 2
+  hb_index.2 = 3
+  hb_index.3 = 4
+  hb_index.4 = 5
+  
+  # Get the dates of the HbA1c measurement
+  first_hba1c_date = HbA1c_temp$LabHbA1cDt[hb_index.1]
+  second_hba1c_date = HbA1c_temp$LabHbA1cDt[hb_index.2]
+  third_hba1c_date = HbA1c_temp$LabHbA1cDt[hb_index.3]
+  forth_hba1c_date = HbA1c_temp$LabHbA1cDt[hb_index.4]
+
+  # Subset the glucose data for this patient to only include measurements before the ith HbA1c measurement and after the i-1th HbA1c measurement, for i = 1 ,2 ,3 ,4.
+  CGM_temp_date_filtered.1 = subset(CGM_temp, DeviceDtTm <= first_hba1c_date)
+  CGM_temp_date_filtered.1 = CGM_temp_date_filtered.1[,c("PtID", "Glucose")]
+  
+  CGM_temp_date_filtered.2 = subset(CGM_temp, DeviceDtTm >= first_hba1c_date)
+  CGM_temp_date_filtered.2 = subset(CGM_temp_date_filtered.2, DeviceDtTm <= second_hba1c_date)
+  CGM_temp_date_filtered.2 = CGM_temp_date_filtered.2[,c("PtID", "Glucose")]
+  
+  CGM_temp_date_filtered.3 = subset(CGM_temp, DeviceDtTm >= second_hba1c_date)
+  CGM_temp_date_filtered.3 = subset(CGM_temp_date_filtered.3, DeviceDtTm <= third_hba1c_date)
+  CGM_temp_date_filtered.3 = CGM_temp_date_filtered.3[,c("PtID", "Glucose")]
+  
+  CGM_temp_date_filtered.4 = subset(CGM_temp, DeviceDtTm >= third_hba1c_date)
+  CGM_temp_date_filtered.4 = subset(CGM_temp_date_filtered.4, DeviceDtTm <= forth_hba1c_date)
+  CGM_temp_date_filtered.4 = CGM_temp_date_filtered.4[,c("PtID", "Glucose")]
+  
+  
+  # add a new column for each glucose value
+  CGM_temp_date_filtered.1 <- CGM_temp_date_filtered.1 %>% 
+    group_by(PtID) %>% 
+    mutate(col = paste0("Glucose", row_number())) %>% 
+    ungroup() %>% 
+    pivot_wider(names_from = col, values_from = Glucose)
+  
+  CGM_temp_date_filtered.2 <- CGM_temp_date_filtered.2 %>% 
+    group_by(PtID) %>% 
+    mutate(col = paste0("Glucose", row_number())) %>% 
+    ungroup() %>% 
+    pivot_wider(names_from = col, values_from = Glucose)
+  
+  CGM_temp_date_filtered.3 <- CGM_temp_date_filtered.3 %>% 
+    group_by(PtID) %>% 
+    mutate(col = paste0("Glucose", row_number())) %>% 
+    ungroup() %>% 
+    pivot_wider(names_from = col, values_from = Glucose)
+  
+  CGM_temp_date_filtered.4 <- CGM_temp_date_filtered.4 %>% 
+    group_by(PtID) %>% 
+    mutate(col = paste0("Glucose", row_number())) %>% 
+    ungroup() %>% 
+    pivot_wider(names_from = col, values_from = Glucose)
+
+  # add HbA1c column  
+  CGM_temp_date_filtered.1$HbA1c <- HbA1c_temp$LabA1cResult[hb_index.1]
+  CGM_temp_date_filtered.2$HbA1c <- HbA1c_temp$LabA1cResult[hb_index.2]
+  CGM_temp_date_filtered.3$HbA1c <- HbA1c_temp$LabA1cResult[hb_index.3]
+  CGM_temp_date_filtered.4$HbA1c <- HbA1c_temp$LabA1cResult[hb_index.4]
+  
+  # add previous HbA1c reading
+  CGM_temp_date_filtered.1$HbA1c_prev <- HbA1c_temp$LabA1cResult[hb_index.0]
+  CGM_temp_date_filtered.2$HbA1c_prev <- HbA1c_temp$LabA1cResult[hb_index.1]
+  CGM_temp_date_filtered.3$HbA1c_prev <- HbA1c_temp$LabA1cResult[hb_index.2]
+  CGM_temp_date_filtered.4$HbA1c_prev <- HbA1c_temp$LabA1cResult[hb_index.3]
+  
+  # Append the new data frame to the list
+  df_CGM.1 <- bind_rows(df_CGM.1, CGM_temp_date_filtered.1)
+  df_CGM.2 <- bind_rows(df_CGM.2, CGM_temp_date_filtered.2)
+  df_CGM.3 <- bind_rows(df_CGM.3, CGM_temp_date_filtered.3)
+  df_CGM.4 <- bind_rows(df_CGM.4, CGM_temp_date_filtered.4)
+}
+
+```
+
+```{r}
+setdiff(df_CGM.1$PtID, df_CGM.2$PtID)
+```
+
+Patients `r setdiff(df_CGM.1$PtID, df_CGM.2$PtID)` are missing their second CGM data
+
+```{r}
+setdiff(df_CGM.2$PtID, df_CGM.3$PtID)
+```
+
+Patients `r setdiff(df_CGM.2$PtID, df_CGM.3$PtID)` are missing their third CGM data
+
+```{r}
+setdiff(df_CGM.3$PtID, df_CGM.4$PtID)
+```
+
+Patients `r setdiff(df_CGM.3$PtID, df_CGM.4$PtID)` are missing their forth CGM data
+
+
+```{r}
+# merge all readings together
+df_CGM = bind_rows(df_CGM.1, df_CGM.2)
+df_CGM = bind_rows(df_CGM, df_CGM.3)
+df_CGM = bind_rows(df_CGM, df_CGM.4)
+```
+
+```{r}
+write.csv(df_CGM, "df_CGM.csv")
+```
+
+```{r}
+df_CGM[c('PtID', 'HbA1c', 'HbA1c_prev')]
+```
+
+
+###############################################
+##################CHECK POINT##################
+###############################################
+
+```{r}
+#df_CGM = read.csv("C:/Users/nicof/Stanford/STATS 315B/Project/df_CGM.csv")
+```
+
+
+```{r}
+# add characteristics of patients to df
+df_CGM_Char_HbA1c = merge(df_summary, df_CGM, by="PtID")
+```
+
+
+```{r}
+# drop unused columns
+df_CGM_Char_HbA1c$RecID = NULL
+df_CGM_Char_HbA1c$RandDt = NULL
+df_CGM_Char_HbA1c$TxGroup = NULL
+df_CGM_Char_HbA1c$HGMReadAvg = NULL
+```
+
+```{r}
+nrow(df_CGM_Char_HbA1c)
+```
+```{r}
+# remove entries with missing HbA1c reading (when I checked, it only applied to the forth PtID 103)
+df_CGM_Char_HbA1c = df_CGM_Char_HbA1c[!is.na(df_CGM_Char_HbA1c$HbA1c),]
+```
+
+```{r}
+nrow(df_CGM_Char_HbA1c)
+```
+```{r}
+write.csv(df_CGM_Char_HbA1c, "df_CGM_Char_HbA1c.csv")
+```
+
+
+
+```{r}
+l = rep(0, (ncol(df_CGM)))
+for (i in 1:(ncol(df_CGM))){
+  col_name <- paste0("Glucose", i)
+  l[i] = sum(!is.na(df_CGM[[col_name]]))
+}
+```
+
+```{r}
+# plot of number of patient that have non NA values for each Glucose_x
+ggplot(data = data.frame(x=1:(ncol(df_CGM)), y = l), aes(x = x, y = y)) + geom_line()
+```
+
+```{r}
+c(nrow(df_CGM[!is.na(df_CGM$Glucose27252),])/nrow(df_CGM), nrow(df_CGM[!is.na(df_CGM$Glucose27251),]), nrow(df_CGM[!is.na(df_CGM$Glucose27252),]))
+```
+Only one variable has more than 27251 
