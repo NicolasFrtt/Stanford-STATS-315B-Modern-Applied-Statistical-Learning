@@ -9,6 +9,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+
 ## Create Features
 
 ```{r}
@@ -20,7 +21,8 @@ require(tidyr)
 
 
 ```{r}
-df_CGM_Char_HbA1c = read.csv("C:/Users/nicof/Stanford/STATS 315B/Project/df_CGM_Char_HbA1c.csv", row.names = NULL)
+# get processed data
+df_CGM_Char_HbA1c = read.csv("C:/Users/nicof/Stanford/STATS 315B/Project/data/processed_data/df_CGM_Char_HbA1c.csv", row.names = NULL)
 df_CGM_Char_HbA1c = df_CGM_Char_HbA1c[, -1]
 df_feng = df_CGM_Char_HbA1c
 ```
@@ -176,14 +178,14 @@ df_feng_stats_and_roc_ready_test = df_feng_stats_and_roc_ready_test[-173,]
 
 ```{r}
 # Write handmade features as csv for further analyses
-write.csv(df_feng_roc_ready_train, "df_feng_roc_ready_train.csv")
-write.csv(df_feng_roc_ready_test, "df_feng_roc_ready_test.csv")
+write.csv(df_feng_roc_ready_train, "../data/processed_data/df_feng_roc_ready_train.csv")
+write.csv(df_feng_roc_ready_test, "../data/processed_data/df_feng_roc_ready_test.csv")
 
-write.csv(df_feng_stats_ready_train, "df_feng_stats_ready_train.csv")
-write.csv(df_feng_stats_ready_test, "df_feng_stats_ready_test.csv")
+write.csv(df_feng_stats_ready_train, "../data/processed_data/df_feng_stats_ready_train.csv")
+write.csv(df_feng_stats_ready_test, "../data/processed_data/df_feng_stats_ready_test.csv")
 
-write.csv(df_feng_stats_and_roc_ready_train, "df_feng_stats_and_roc_ready_train.csv")
-write.csv(df_feng_stats_and_roc_ready_test, "df_feng_stats_and_roc_ready_test.csv")
+write.csv(df_feng_stats_and_roc_ready_train, "../data/processed_data/df_feng_stats_and_roc_ready_train.csv")
+write.csv(df_feng_stats_and_roc_ready_test, "../data/processed_data/df_feng_stats_and_roc_ready_test.csv")
 ```
 
 
